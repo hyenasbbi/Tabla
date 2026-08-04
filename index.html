@@ -1193,6 +1193,7 @@
 
       <div class="top-actions">
         <div class="date-chip">📅 <span id="currentDateLabel">Agosto 2026</span></div>
+        <div id="cloudStatus" class="date-chip" title="Estado de sincronización">☁ Conectando...</div>
         <button class="admin-trigger" type="button" onclick="requestAdminAccess()">⚙ Panel Admin</button>
       </div>
     </header>
@@ -1315,7 +1316,7 @@
         <button class="btn btn-secondary" type="button" onclick="closeOverlay('loginOverlay')">Cancelar</button>
       </div>
 
-      <p class="security-note">Este sitio funciona en GitHub Pages. La contraseña bloquea la interfaz, pero no reemplaza una autenticación real de servidor.</p>
+      <p class="security-note">La contraseña se valida en una función privada de Netlify. Los datos se guardan en la nube y se comparten entre todos los dispositivos.</p>
     </div>
   </div>
 
@@ -1465,8 +1466,8 @@
     const GLOBAL_TARGET = 20000;
     const STORAGE_KEY = "hyenas-definitive-dashboard-v1";
     const DATA_VERSION = 2;
-    const ADMIN_SESSION_KEY = "hyenas-admin-unlocked";
-    const ADMIN_PASSWORD_HASH = "2df46007a047b57e4aea3b897756c55b9cebde8ac74a62ae10b815e569171eb1";
+    const API_URL = "/api/dashboard";
+    const ADMIN_TOKEN_KEY = "hyenas-admin-token";
 
     const DEFAULT_TEAM = [
       {
@@ -1576,6 +1577,10 @@
 
     let selectedOcrFile = null;
     let currentOcrResults = [];
+    let cloudBootstrapComplete = false;
+    let cloudAvailable = false;
+    let cloudSaveTimer = null;
+    let cloudSaveInProgress = false;
 
     function structuredCloneSafe(value) {
       return JSON.parse(JSON.stringify(value));
@@ -1608,6 +1613,164 @@
 
     function saveState() {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+
+      if (
+        cloudBootstrapComplete &&
+        cloudAvailable &&
+        sessionStorage.getItem(ADMIN_TOKEN_KEY)
+      ) {
+        queueCloudSave();
+      }
+    }
+
+    function setCloudStatus(mode, message) {
+      const chip = document.getElementById("cloudStatus");
+
+      if (!chip) {
+        return;
+      }
+
+      chip.textContent = message;
+      chip.style.color =
+        mode === "online" ? "var(--green)" :
+        mode === "error" ? "var(--red)" :
+        mode === "saving" ? "var(--cyan)" :
+        "var(--muted)";
+    }
+
+    function queueCloudSave() {
+      clearTimeout(cloudSaveTimer);
+
+      cloudSaveTimer = setTimeout(() => {
+        persistStateToCloud().catch(error => {
+          console.error("Error al sincronizar:", error);
+        });
+      }, 250);
+    }
+
+    async function persistStateToCloud() {
+      const token = sessionStorage.getItem(ADMIN_TOKEN_KEY);
+
+      if (!token || cloudSaveInProgress) {
+        return false;
+      }
+
+      cloudSaveInProgress = true;
+      setCloudStatus("saving", "☁ Guardando...");
+
+      try {
+        const response = await fetch(API_URL, {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${token}`
+          },
+          body: JSON.stringify({ state })
+        });
+
+        const payload = await response.json().catch(() => ({}));
+
+        if (response.status === 401) {
+          sessionStorage.removeItem(ADMIN_TOKEN_KEY);
+          closeAdmin();
+          setCloudStatus("error", "☁ Sesión vencida");
+          alert("La sesión de administrador venció. Ingresá nuevamente.");
+          return false;
+        }
+
+        if (!response.ok) {
+          throw new Error(payload.error || "No se pudo guardar en Netlify.");
+        }
+
+        cloudAvailable = true;
+        setCloudStatus("online", "☁ Sincronizado");
+        return true;
+      } catch (error) {
+        setCloudStatus("error", "☁ Error al guardar");
+        alert(`El cambio quedó en este navegador, pero no pudo guardarse en la nube: ${error.message}`);
+        return false;
+      } finally {
+        cloudSaveInProgress = false;
+      }
+    }
+
+    function normalizeIncomingCloudState(incoming) {
+      if (!incoming || !Array.isArray(incoming.team)) {
+        throw new Error("La respuesta de la nube no contiene una tabla válida.");
+      }
+
+      state = {
+        version: Number(incoming.version) || DATA_VERSION,
+        team: incoming.team,
+        winner3k: incoming.winner3k || null,
+        lastUpdated: incoming.lastUpdated || null
+      };
+
+      state.team = state.team.filter(
+        seller => normalizeText(seller.shortName) !== "torna"
+      );
+
+      const hasKevin = state.team.some(
+        seller => normalizeText(seller.shortName) === "kevin"
+      );
+
+      if (!hasKevin) {
+        state.team.push(
+          structuredCloneSafe(
+            DEFAULT_TEAM.find(seller => seller.id === "kevin")
+          )
+        );
+      }
+
+      state.team.forEach((seller, index) => {
+        seller.id = seller.id || slugify(seller.shortName);
+        seller.fullName = seller.fullName || seller.shortName;
+        seller.aliases = Array.isArray(seller.aliases)
+          ? seller.aliases
+          : [seller.fullName, seller.shortName];
+        seller.sales = Math.max(0, Number(seller.sales) || 0);
+        seller.target = Math.max(0, Number(seller.target) || 0);
+        seller.strikes = Math.max(0, Number(seller.strikes) || 0);
+        seller.ticket2k = Boolean(seller.ticket2k);
+        seller.rank = Number(seller.rank) || index + 1;
+        seller.previousRank = Number(seller.previousRank) || seller.rank;
+      });
+
+      recalculateAutomaticRanks();
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    }
+
+    async function loadCloudState({ silent = false } = {}) {
+      if (!silent) {
+        setCloudStatus("loading", "☁ Conectando...");
+      }
+
+      try {
+        const response = await fetch(`${API_URL}?t=${Date.now()}`, {
+          method: "GET",
+          cache: "no-store",
+          headers: { "Accept": "application/json" }
+        });
+
+        const payload = await response.json().catch(() => ({}));
+
+        if (!response.ok) {
+          throw new Error(payload.error || "No se pudo cargar la tabla compartida.");
+        }
+
+        normalizeIncomingCloudState(payload.state);
+        cloudAvailable = true;
+        cloudBootstrapComplete = true;
+        renderDashboard();
+        setCloudStatus("online", "☁ En línea");
+        return true;
+      } catch (error) {
+        cloudAvailable = false;
+        cloudBootstrapComplete = true;
+        setCloudStatus("error", "☁ Sin conexión");
+        console.error("No se pudo cargar la nube:", error);
+        return false;
+      }
     }
 
     function loadState() {
@@ -1909,17 +2072,8 @@
         .replaceAll("'", "&#039;");
     }
 
-    async function sha256(value) {
-      const data = new TextEncoder().encode(value);
-      const digest = await crypto.subtle.digest("SHA-256", data);
-
-      return Array.from(new Uint8Array(digest))
-        .map(byte => byte.toString(16).padStart(2, "0"))
-        .join("");
-    }
-
     function requestAdminAccess() {
-      if (sessionStorage.getItem(ADMIN_SESSION_KEY) === "1") {
+      if (sessionStorage.getItem(ADMIN_TOKEN_KEY)) {
         openAdmin();
         return;
       }
@@ -1936,21 +2090,45 @@
       const loginError = document.getElementById("loginError");
 
       loginError.classList.remove("show");
+      loginError.textContent = "Contraseña incorrecta.";
+
+      if (!password) {
+        loginError.textContent = "Ingresá la contraseña.";
+        loginError.classList.add("show");
+        return;
+      }
 
       try {
-        const passwordHash = await sha256(password);
+        const response = await fetch(API_URL, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "login", password })
+        });
 
-        if (passwordHash !== ADMIN_PASSWORD_HASH) {
+        const payload = await response.json().catch(() => ({}));
+
+        if (!response.ok || !payload.token) {
+          loginError.textContent = payload.error || "Contraseña incorrecta.";
           loginError.classList.add("show");
           return;
         }
 
-        sessionStorage.setItem(ADMIN_SESSION_KEY, "1");
+        sessionStorage.setItem(ADMIN_TOKEN_KEY, payload.token);
+
+        const cloudLoaded = await loadCloudState({ silent: true });
+
+        if (!cloudLoaded) {
+          sessionStorage.removeItem(ADMIN_TOKEN_KEY);
+          loginError.textContent = "La contraseña es correcta, pero no se pudo abrir la base compartida de Netlify.";
+          loginError.classList.add("show");
+          return;
+        }
+
         closeOverlay("loginOverlay");
         openAdmin();
       } catch (error) {
         console.error(error);
-        loginError.textContent = "El navegador no pudo validar la contraseña.";
+        loginError.textContent = "No se pudo conectar con Netlify. Revisá el deploy y las variables de entorno.";
         loginError.classList.add("show");
       }
     }
@@ -2706,6 +2884,22 @@
 
     loadState();
     renderDashboard();
+    loadCloudState();
+
+    window.addEventListener("focus", () => {
+      if (!document.getElementById("adminOverlay").classList.contains("open")) {
+        loadCloudState({ silent: true });
+      }
+    });
+
+    setInterval(() => {
+      if (
+        !document.hidden &&
+        !document.getElementById("adminOverlay").classList.contains("open")
+      ) {
+        loadCloudState({ silent: true });
+      }
+    }, 30000);
   </script>
 </body>
 </html>

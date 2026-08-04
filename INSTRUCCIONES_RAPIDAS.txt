@@ -1,0 +1,18 @@
+HYENAS — INSTALACIÓN EN GITHUB + NETLIFY
+
+1. Descomprimí este ZIP.
+2. Subí TODOS los archivos y carpetas a la raíz de tu repositorio de GitHub.
+3. En Netlify: Add new project > Import an existing project > GitHub.
+4. Elegí ese repositorio. No hace falta cambiar Publish directory ni Functions directory: netlify.toml ya los configura.
+5. En Netlify: Project configuration > Environment variables.
+6. Creá:
+   ADMIN_PASSWORD = Nahuel25$
+   ADMIN_TOKEN_SECRET = una cadena aleatoria larga de 40 caracteres o más
+7. Hacé un nuevo deploy después de guardar las variables.
+8. Compartí la URL https://nombre-del-sitio.netlify.app
+
+IMPORTANTE:
+- No subas únicamente index.html.
+- No uses una dirección localhost.
+- No uses Netlify Drop para esta versión; conectá el repositorio de GitHub.
+- Todos los dispositivos verán la misma tabla porque los datos se guardan en Netlify Blobs.
