@@ -51,3 +51,16 @@ npx netlify dev
 ```
 
 En desarrollo local creá un archivo `.env` con las mismas dos variables. `.env` ya está excluido de Git.
+
+
+## Reinicio mensual automático
+
+La versión 3 reconoce el mes actual usando la zona horaria `America/Argentina/Buenos_Aires`. En el primer acceso de cada nuevo mes, la función de Netlify:
+
+- archiva automáticamente el estado del mes anterior en Netlify Blobs;
+- conserva vendedores, metas y el orden final del mes anterior;
+- reinicia facturación, strikes y bonos a cero;
+- reinicia las flechas de movimiento para evitar cambios falsos;
+- actualiza automáticamente el título del dashboard al mes vigente.
+
+No hace falta editar el código cada mes.
