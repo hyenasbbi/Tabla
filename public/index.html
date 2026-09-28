@@ -1273,7 +1273,7 @@
 
           <div class="bonus-card">
             <div class="bonus-top">
-              <div class="bonus-title">Meta $5.000 ($50 USD)</div>
+              <div class="bonus-title">Meta $5.000 ($25 USD)</div>
               <div id="status5k" class="bonus-status">🔒 Bloqueado</div>
             </div>
             <div class="bonus-track"><div id="bar5k" class="bonus-fill"></div></div>
@@ -1282,7 +1282,7 @@
 
           <div class="bonus-card">
             <div class="bonus-top">
-              <div class="bonus-title">Meta $6.000 Pro ($100 USD)</div>
+              <div class="bonus-title">Meta $6.500 Pro ($50 USD)</div>
               <div id="status6k" class="bonus-status">🔒 Bloqueado</div>
             </div>
             <div class="bonus-track"><div id="bar6k" class="bonus-fill"></div></div>
@@ -2038,8 +2038,8 @@
         ? `Ganadores: ${at5k.map(seller => seller.shortName).join(", ")}`
         : "Alcanzado por: 0 vendedores";
 
-      const at6k = sortedTeam.filter(seller => seller.sales >= 6000);
-      document.getElementById("bar6k").style.width = `${Math.min((highestSales / 6000) * 100, 100)}%`;
+      const at6k = sortedTeam.filter(seller => seller.sales >= 6500);
+      document.getElementById("bar6k").style.width = `${Math.min((highestSales / 6500) * 100, 100)}%`;
       setBonusStatus("status6k", at6k.length > 0);
       document.getElementById("copy6k").textContent = at6k.length
         ? `Ganadores: ${at6k.map(seller => seller.shortName).join(", ")}`
