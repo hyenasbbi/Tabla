@@ -1359,7 +1359,7 @@
             <label>Objetivo mensual del equipo (USD)<input id="settingTarget" class="input" type="number" min="1" max="100000000" step="any" required></label>
           </div>
           <h3>Bonos</h3>
-          <p class="admin-card-copy">Configurá los umbrales y premios. Si cambiás el umbral de un bono, se vuelve a evaluar; el ticket único se marca en Edición manual.</p>
+          <p class="admin-card-copy">Configurá los umbrales y premios. Si cambiás el umbral de un bono, se vuelve a evaluar; el ticket único se marca en Edición manual y requiere facturación suficiente.</p>
           <div id="bonusSettings" class="settings-grid"></div>
           <h3>Objetivos mensuales por vendedor</h3>
           <div id="sellerTargets" class="settings-grid"></div>
@@ -2180,9 +2180,13 @@
     function renderBonuses(sortedTeam) {
       const bonuses = normalizeSettings(state.settings).bonuses;
       const highestSales = Math.max(0, ...sortedTeam.map(seller => Number(seller.sales) || 0));
-      const ticketWinner = sortedTeam.find(seller => seller.ticket2k);
+      const ticketWinner = sortedTeam.find(seller => seller.ticket2k && seller.sales >= bonuses[0].target);
       const sellerAt3k = sortedTeam.find(seller => seller.sales >= bonuses[1].target);
 
+      const previousWinner = sortedTeam.find(seller => seller.shortName === state.winner3k);
+      if (!previousWinner || previousWinner.sales < bonuses[1].target) {
+        state.winner3k = null;
+      }
       if (sellerAt3k && !state.winner3k) {
         state.winner3k = sellerAt3k.shortName;
       }
