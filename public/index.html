@@ -1177,6 +1177,10 @@
         width: 100%;
       }
     }
+  .settings-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,240px),1fr)); gap:16px; margin:16px 0 24px; }
+    .settings-grid label {display:flex; flex-direction:column; gap:8px; min-width:0; margin-top:10px;}
+    .settings-grid .input {width:100%; min-width:0;} .settings-grid input[type=color] {height:46px; padding:4px;}
+    .brand p {overflow-wrap:anywhere;}
   </style>
 </head>
 
@@ -1332,24 +1336,45 @@
       </header>
 
       <nav class="admin-tabs" aria-label="Secciones del panel">
+        <button class="tab-btn" data-tab="settings" type="button" onclick="switchAdminTab('settings', this)">Configuración</button>
         <button class="tab-btn active" data-tab="manual" type="button" onclick="switchAdminTab('manual', this)">Edición manual</button>
         <button class="tab-btn" data-tab="ocr" type="button" onclick="switchAdminTab('ocr', this)">Cargar imagen</button>
         <button class="tab-btn" data-tab="team" type="button" onclick="switchAdminTab('team', this)">Vendedores</button>
         <button class="tab-btn" data-tab="data" type="button" onclick="switchAdminTab('data', this)">Datos</button>
       </nav>
 
+
+      <div id="tab-settings" class="admin-section">
+        <form id="settingsForm" class="admin-card" onsubmit="saveSettings(event)">
+          <h3>Mes, banner y objetivos</h3>
+          <p class="admin-card-copy">Los cambios se comparten con todo el equipo. El nombre del mes es una etiqueta; no reinicia las ventas.</p>
+          <div class="settings-grid">
+            <label>Nombre del mes<input id="settingMonth" class="input" maxlength="80" placeholder="Ej.: Noviembre 2026"></label>
+            <label>Color del banner<input id="settingColor" class="input" type="color"></label>
+            <label>Objetivo mensual del equipo (USD)<input id="settingTarget" class="input" type="number" min="1" max="100000000" step="any" required></label>
+          </div>
+          <h3>Bonos</h3>
+          <p class="admin-card-copy">Configurá los umbrales y premios. Si cambiás el umbral de un bono, se vuelve a evaluar; el ticket único se marca en Edición manual y requiere facturación suficiente.</p>
+          <div id="bonusSettings" class="settings-grid"></div>
+          <h3>Objetivos mensuales por vendedor</h3>
+          <div id="sellerTargets" class="settings-grid"></div>
+          <div class="button-row"><button class="btn btn-primary" type="submit">Guardar configuración</button><button class="btn btn-secondary" type="button" onclick="renderSettings()">Descartar cambios</button></div>
+          <p id="settingsMessage" role="status" class="admin-card-copy"></p>
+        </form>
+      </div>
+
       <!-- EDICIÓN MANUAL -->
       <div id="tab-manual" class="admin-section active">
         <div class="admin-card">
           <h3>Actualizar facturación del equipo</h3>
-          <p class="admin-card-copy">Ingresá únicamente la facturación, los strikes y el ticket de $2.000. El ranking se ordena automáticamente de mayor a menor facturación y las flechas comparan el nuevo puesto con la tabla anterior.</p>
+          <p class="admin-card-copy">Ingresá únicamente la facturación, los strikes y el ticket único configurado. El ranking se ordena automáticamente de mayor a menor facturación y las flechas comparan el nuevo puesto con la tabla anterior.</p>
         </div>
 
         <div class="manual-head">
           <div>Vendedor</div>
           <div>Facturado</div>
           <div>Strikes</div>
-          <div>Ticket 2K</div>
+          <div>Ticket único</div>
           <div>Eliminar</div>
         </div>
 
@@ -1463,7 +1488,19 @@
   <script>
     "use strict";
 
-    const GLOBAL_TARGET = 20000;
+    function normalizeSettings(input = {}) {
+  input = input && typeof input === "object" ? input : {};
+  const number = (value, fallback, min = 0) => Number.isFinite(Number(value)) && value !== "" && value != null ? Math.min(100000000, Math.max(min, Number(value))) : fallback;
+  return {
+    monthLabel: String(input.monthLabel || "").trim().slice(0, 80),
+    bannerColor: /^#[0-9a-f]{6}$/i.test(input.bannerColor) ? input.bannerColor : "#161d3d",
+    monthlyTarget: number(input.monthlyTarget, 20000, 1),
+    bonuses: [2000, 3000, 5000, 6500].map((target, index) => ({
+      target: number(input.bonuses?.[index]?.target, target, 1),
+      reward: number(input.bonuses?.[index]?.reward, index === 3 ? 50 : 25)
+    }))
+  };
+}
     const STORAGE_KEY = "hyenas-definitive-dashboard-v1";
     const DATA_VERSION = 2;
     const API_URL = "/api/dashboard";
@@ -1701,6 +1738,7 @@
 
       state = {
         version: Number(incoming.version) || DATA_VERSION,
+        settings: normalizeSettings(incoming.settings),
         team: incoming.team,
         winner3k: incoming.winner3k || null,
         lastUpdated: incoming.lastUpdated || null
@@ -1791,7 +1829,8 @@
 
         state = {
           version: Number(parsed.version) || 1,
-          team: parsed.team,
+          settings: normalizeSettings(parsed.settings),
+        team: parsed.team,
           winner3k: parsed.winner3k || null,
           lastUpdated: parsed.lastUpdated || null
         };
@@ -1961,6 +2000,19 @@
     }
 
     function renderDashboard() {
+      state.settings = normalizeSettings(state.settings);
+      const settings = state.settings;
+      const GLOBAL_TARGET = settings.monthlyTarget;
+      document.querySelector(".topbar").style.background = settings.bannerColor;
+      document.querySelector(".goal-color").textContent = `$${formatMoney(GLOBAL_TARGET)} USD`;
+      const monthLabel = settings.monthLabel || new Intl.DateTimeFormat("es-AR", {month:"long", year:"numeric", timeZone:"America/Argentina/Buenos_Aires"}).format(new Date());
+      document.querySelector(".brand p").innerHTML = `Metas, posiciones y carrera de bonos · <span id="periodTitle"></span>`;
+      document.getElementById("periodTitle").textContent = monthLabel;
+      document.querySelectorAll(".bonus-title").forEach((element, i) => {
+        const bonus = settings.bonuses[i];
+        const prefixes = ["Primer ticket único de", "Primero en llegar a", "Meta", "Meta Pro"];
+        element.textContent = `${prefixes[i]} $${formatMoney(bonus.target)} ($${formatMoney(bonus.reward)} USD)`;
+      });
       const leaderboard = document.getElementById("leaderboard");
       const sorted = getSortedTeam();
       const totalSales = sorted.reduce((sum, seller) => sum + Number(seller.sales || 0), 0);
@@ -2011,35 +2063,40 @@
     }
 
     function renderBonuses(sortedTeam) {
+      const bonuses = normalizeSettings(state.settings).bonuses;
       const highestSales = Math.max(0, ...sortedTeam.map(seller => Number(seller.sales) || 0));
-      const ticketWinner = sortedTeam.find(seller => seller.ticket2k);
-      const sellerAt3k = sortedTeam.find(seller => seller.sales >= 3000);
+      const ticketWinner = sortedTeam.find(seller => seller.ticket2k && seller.sales >= bonuses[0].target);
+      const sellerAt3k = sortedTeam.find(seller => seller.sales >= bonuses[1].target);
 
+      const previousWinner = sortedTeam.find(seller => seller.shortName === state.winner3k);
+      if (!previousWinner || previousWinner.sales < bonuses[1].target) {
+        state.winner3k = null;
+      }
       if (sellerAt3k && !state.winner3k) {
         state.winner3k = sellerAt3k.shortName;
       }
 
-      document.getElementById("bar2k").style.width = `${ticketWinner ? 100 : Math.min((highestSales / 2000) * 100, 100)}%`;
+      document.getElementById("bar2k").style.width = `${ticketWinner ? 100 : Math.min((highestSales / bonuses[0].target) * 100, 100)}%`;
       setBonusStatus("status2k", Boolean(ticketWinner));
       document.getElementById("copy2k").textContent = ticketWinner
         ? `Ganador: ${ticketWinner.shortName}`
         : "Ganador: En disputa...";
 
-      document.getElementById("bar3k").style.width = `${Math.min((highestSales / 3000) * 100, 100)}%`;
+      document.getElementById("bar3k").style.width = `${Math.min((highestSales / bonuses[1].target) * 100, 100)}%`;
       setBonusStatus("status3k", Boolean(state.winner3k));
       document.getElementById("copy3k").textContent = state.winner3k
         ? `Ganador: ${state.winner3k}`
         : "Ganador: En disputa...";
 
-      const at5k = sortedTeam.filter(seller => seller.sales >= 5000);
-      document.getElementById("bar5k").style.width = `${Math.min((highestSales / 5000) * 100, 100)}%`;
+      const at5k = sortedTeam.filter(seller => seller.sales >= bonuses[2].target);
+      document.getElementById("bar5k").style.width = `${Math.min((highestSales / bonuses[2].target) * 100, 100)}%`;
       setBonusStatus("status5k", at5k.length > 0);
       document.getElementById("copy5k").textContent = at5k.length
         ? `Ganadores: ${at5k.map(seller => seller.shortName).join(", ")}`
         : "Alcanzado por: 0 vendedores";
 
-      const at6k = sortedTeam.filter(seller => seller.sales >= 6500);
-      document.getElementById("bar6k").style.width = `${Math.min((highestSales / 6500) * 100, 100)}%`;
+      const at6k = sortedTeam.filter(seller => seller.sales >= bonuses[3].target);
+      document.getElementById("bar6k").style.width = `${Math.min((highestSales / bonuses[3].target) * 100, 100)}%`;
       setBonusStatus("status6k", at6k.length > 0);
       document.getElementById("copy6k").textContent = at6k.length
         ? `Ganadores: ${at6k.map(seller => seller.shortName).join(", ")}`
@@ -2050,7 +2107,7 @@
       const label = document.getElementById("currentDateLabel");
 
       if (!state.lastUpdated) {
-        label.textContent = "Agosto 2026";
+        label.textContent = state.settings?.monthLabel || new Intl.DateTimeFormat("es-AR", {month:"long", year:"numeric", timeZone:"America/Argentina/Buenos_Aires"}).format(new Date());
         return;
       }
 
@@ -2157,7 +2214,41 @@
       }
     }
 
+
+    function renderSettings() {
+      const settings = normalizeSettings(state.settings);
+      document.getElementById("settingMonth").value = settings.monthLabel;
+      document.getElementById("settingColor").value = settings.bannerColor;
+      document.getElementById("settingTarget").value = settings.monthlyTarget;
+      const names = ["Primer ticket único", "Primero en alcanzar la meta", "Meta individual", "Meta Pro"];
+      document.getElementById("bonusSettings").innerHTML = settings.bonuses.map((bonus, i) => `<div><strong>${names[i]}</strong><label>Umbral (USD)<input class="input" id="bonusTarget${i}" type="number" min="1" max="100000000" step="any" value="${bonus.target}" required></label><label>Premio (USD)<input class="input" id="bonusReward${i}" type="number" min="0" max="100000000" step="any" value="${bonus.reward}" required></label></div>`).join("");
+      document.getElementById("sellerTargets").innerHTML = getSortedTeam().map(seller => `<label>${escapeHtml(seller.shortName)}<input class="input" data-target-seller="${seller.id}" type="number" min="0" max="100000000" step="any" value="${seller.target}" required></label>`).join("");
+      document.getElementById("settingsMessage").textContent = "";
+    }
+
+    async function saveSettings(event) {
+      event.preventDefault();
+      if (!sessionStorage.getItem(ADMIN_TOKEN_KEY)) return requestAdminAccess();
+      const previous = normalizeSettings(state.settings);
+      state.settings = normalizeSettings({
+        monthLabel: document.getElementById("settingMonth").value,
+        bannerColor: document.getElementById("settingColor").value,
+        monthlyTarget: document.getElementById("settingTarget").value,
+        bonuses: previous.bonuses.map((_, i) => ({target: document.getElementById(`bonusTarget${i}`).value, reward: document.getElementById(`bonusReward${i}`).value}))
+      });
+      if (previous.bonuses[1].target !== state.settings.bonuses[1].target) state.winner3k = null;
+      if (previous.bonuses[0].target !== state.settings.bonuses[0].target) state.team.forEach(seller => seller.ticket2k = false);
+      document.querySelectorAll("[data-target-seller]").forEach(input => {
+        const seller = state.team.find(item => item.id === input.dataset.targetSeller);
+        if (seller) seller.target = Number(input.value);
+      });
+      state.lastUpdated = new Date().toISOString();
+      renderDashboard();
+      document.getElementById("settingsMessage").textContent = "Configuración actualizada. Consultá el indicador de nube para confirmar la sincronización.";
+    }
+
     function openAdmin() {
+      renderSettings();
       renderManualAdmin();
       renderTeamManagement();
       openOverlay("adminOverlay");
@@ -2174,6 +2265,7 @@
       document.getElementById(`tab-${tabName}`).classList.add("active");
       button.classList.add("active");
 
+      if (tabName === "settings") renderSettings();
       if (tabName === "manual") {
         renderManualAdmin();
       }
@@ -2809,7 +2901,8 @@
 
           state = {
             version: DATA_VERSION,
-            team: imported.team,
+            settings: normalizeSettings(imported.settings),
+        team: imported.team,
             winner3k: imported.winner3k || null,
             lastUpdated: imported.lastUpdated || new Date().toISOString()
           };
@@ -2854,6 +2947,7 @@
 
       state = {
         version: DATA_VERSION,
+        settings: normalizeSettings(state.settings),
         team: structuredCloneSafe(DEFAULT_TEAM),
         winner3k: null,
         lastUpdated: new Date().toISOString()

@@ -246,6 +246,20 @@ function cleanNumber(value, maximum = 100_000_000) {
     : 0;
 }
 
+function normalizeSettings(input = {}) {
+  input = input && typeof input === "object" ? input : {};
+  const number = (value, fallback, min = 0) => Number.isFinite(Number(value)) && value !== "" && value != null ? Math.min(100000000, Math.max(min, Number(value))) : fallback;
+  return {
+    monthLabel: String(input.monthLabel || "").trim().slice(0, 80),
+    bannerColor: /^#[0-9a-f]{6}$/i.test(input.bannerColor) ? input.bannerColor : "#161d3d",
+    monthlyTarget: number(input.monthlyTarget, 20000, 1),
+    bonuses: [2000, 3000, 5000, 6500].map((target, index) => ({
+      target: number(input.bonuses?.[index]?.target, target, 1),
+      reward: number(input.bonuses?.[index]?.reward, index === 3 ? 50 : 25)
+    }))
+  };
+}
+
 function sanitizeState(input) {
   if (!input || !Array.isArray(input.team)) {
     throw new Error("Estado inválido: falta el equipo.");
@@ -300,6 +314,7 @@ function sanitizeState(input) {
       ? cleanText(input.periodLabel, 40)
       : inferredPeriod.label,
     team,
+    settings: normalizeSettings(input.settings),
     winner3k: input.winner3k ? cleanText(input.winner3k, 50) : null,
     lastUpdated: input.lastUpdated || new Date().toISOString(),
   };
@@ -310,6 +325,7 @@ function makeInitialState(period = getCurrentPeriod()) {
     version: DATA_VERSION,
     periodKey: period.key,
     periodLabel: period.label,
+    settings: normalizeSettings(),
     team: clone(DEFAULT_TEAM),
     winner3k: null,
     lastUpdated: new Date().toISOString(),
@@ -340,6 +356,7 @@ function makeMonthlyResetState(previousState, period = getCurrentPeriod()) {
     version: DATA_VERSION,
     periodKey: period.key,
     periodLabel: period.label,
+    settings: normalizeSettings({ ...previousState?.settings, monthLabel: "" }),
     team,
     winner3k: null,
     lastUpdated: new Date().toISOString(),

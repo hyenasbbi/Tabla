@@ -64,3 +64,9 @@ La versión 3 reconoce el mes actual usando la zona horaria `America/Argentina/B
 - actualiza automáticamente el título del dashboard al mes vigente.
 
 No hace falta editar el código cada mes.
+
+## Configuración desde el panel admin
+
+En **Panel Admin → Configuración** se pueden editar el color del banner, el nombre visible del mes, el objetivo mensual general, las metas de cada vendedor y los umbrales y premios de los cuatro bonos. Los cambios se guardan en el estado compartido de Netlify y en los respaldos JSON. Dejar el mes vacío muestra el mes actual. Cambiar su nombre no reinicia ventas. Cambiar el umbral del ticket único borra sus marcas para volver a verificarlas; cambiar la primera meta vuelve a evaluar su ganador.
+
+Validación: `node --test tests/settings.test.mjs`.
